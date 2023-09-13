@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <string>
 #include <array>
+#include <iterator>
 
 #if defined(__cplusplus) && __cplusplus >= 202002L || defined(_MSVC_LANG) && _MSVC_LANG >= 202002L
 #include <ranges>
