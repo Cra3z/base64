@@ -7,7 +7,6 @@
 #include <ranges>
 #endif
 
-namespace ccat {
 namespace base64 {
 
 using byte = unsigned char;
@@ -281,7 +280,7 @@ private:
 
 
 inline auto encode_from_file(std::ifstream& istm) ->std::string {
-    return ccat::base64::encode(byte_stream_input_iterator<>{istm}, {});
+    return encode(byte_stream_input_iterator<>{istm}, {});
 }
 
 template<typename TargetIt>
@@ -291,7 +290,7 @@ auto encode_from_file_to(std::ifstream& istm, TargetIt target) ->void {
         detail::is_output_iter<TargetIt>::value,
         "type `TargetIt` must be a input-iterator or output-iterator type"
     );
-    ccat::base64::encode_to(byte_stream_input_iterator<>{istm}, {}, target);
+    encode_to(byte_stream_input_iterator<>{istm}, {}, target);
 }
 
 template<typename InputIt>
@@ -306,5 +305,4 @@ auto decode_to_file(const Range& rng_, std::ofstream& ostm) ->void {
     decode_to_file(std::begin(rng_), std::end(rng_), ostm);
 }
 
-}
 }
