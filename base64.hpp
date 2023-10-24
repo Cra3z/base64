@@ -2,12 +2,12 @@
 #include <type_traits>
 #include <string>
 #include <array>
-#include <iterator>
 
 #if defined(__cplusplus) && __cplusplus >= 202002L || defined(_MSVC_LANG) && _MSVC_LANG >= 202002L
 #include <ranges>
 #endif
 
+namespace ccat {
 namespace base64 {
 
 using byte = unsigned char;
@@ -24,13 +24,13 @@ template<bool cond, typename L, typename R>
 using conditional_t = typename std::conditional<cond, L, R>::type;
 
 template<typename T, typename = void>
-struct is_forward_iter : std::false_type {};
+struct is_input_iter : std::false_type {};
 
 template<typename T>
-struct is_forward_iter<T, enable_if_t<std::is_pointer<T>::value>> : std::true_type {};
+struct is_input_iter<T, enable_if_t<std::is_pointer<T>::value>> : std::true_type {};
 
 template<typename T>
-struct is_forward_iter<T, enable_if_t<std::is_base_of<std::forward_iterator_tag, typename T::iterator_category>::value>> : std::true_type {};
+struct is_input_iter<T, enable_if_t<std::is_base_of<std::input_iterator_tag, typename T::iterator_category>::value>> : std::true_type {};
 
 template<typename T, typename = void>
 struct is_output_iter : std::false_type {};
@@ -89,15 +89,15 @@ struct is_range<T, void_t<decltype(std::begin(std::declval<T&>()), std::end(std:
 
 }
 
-template<typename ForwardIt, typename OutIt>
-auto encode_to(ForwardIt first, ForwardIt second, OutIt target) -> void {
-    static_assert(detail::is_forward_iter<ForwardIt>::value, "type `ForwardIt` must be a forward-iterator type");
+template<typename InputIt, typename TargetIt>
+auto encode_to(InputIt first, InputIt second, TargetIt target) -> void {
+    static_assert(detail::is_input_iter<InputIt>::value, "type `InputIt` must be a input-iterator type");
     static_assert(
-        detail::is_forward_iter<OutIt>::value ||
-        detail::is_output_iter<OutIt>::value,
-        "type `OutIt` must be a forward-iterator or output-iterator type"
+        detail::is_input_iter<TargetIt>::value ||
+        detail::is_output_iter<TargetIt>::value,
+        "type `TargetIt` must be a input-iterator or output-iterator type"
     );
-    static_assert(detail::is_rdonly_byte_type_iter<ForwardIt>::value, "the type of value in the range [first, second) must be `char`, `unsigned char`, `signed char`, `byte` or `std::byte`");
+    static_assert(detail::is_rdonly_byte_type_iter<InputIt>::value, "the type of value in the range [first, second) must be `char`, `unsigned char`, `signed char`, `byte` or `std::byte`");
     static const std::array<char, 65> table_{"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"};
     size_t flag_{};
     byte prev{};
@@ -133,14 +133,14 @@ auto encode_to(ForwardIt first, ForwardIt second, OutIt target) -> void {
     }
 }
 
-template<typename Range, typename OutIt>
-auto encode_to(const Range& rng_, OutIt target) -> void {
+template<typename Range, typename TargetIt>
+auto encode_to(const Range& rng_, TargetIt target) -> void {
     static_assert(detail::is_range<Range>::value, "type `Range` must be a range type: [begin, end)");
     encode_to(std::begin(rng_), std::end(rng_), target);
 }
 
-template<typename ForwardIt>
-auto encode(ForwardIt first, ForwardIt second) ->std::string {
+template<typename InputIt>
+auto encode(InputIt first, InputIt second) ->std::string {
     std::string res{};
     encode_to(first, second, std::back_inserter(res));
     return res;
@@ -155,15 +155,15 @@ auto encode(const Range& rng_) ->std::string {
 }
 
 
-template<typename ForwardIt, typename OutIt>
-auto decode_to(ForwardIt first, ForwardIt second, OutIt target) -> void {
-    static_assert(detail::is_forward_iter<ForwardIt>::value, "type `ForwardIt` must be a forward-iterator type");
+template<typename InputIt, typename TargetIt>
+auto decode_to(InputIt first, InputIt second, TargetIt target) -> void {
+    static_assert(detail::is_input_iter<InputIt>::value, "type `InputIt` must be a input-iterator type");
     static_assert(
-        detail::is_forward_iter<OutIt>::value ||
-        detail::is_output_iter<OutIt>::value,
-        "type `OutIt` must be a forward-iterator or output-iterator type"
+        detail::is_input_iter<TargetIt>::value ||
+        detail::is_output_iter<TargetIt>::value,
+        "type `TargetIt` must be a input-iterator or output-iterator type"
     );
-    static_assert(detail::is_byte_type_iter<ForwardIt>::value, "the type of value in the range [first, second) must be `char`, `unsigned char`, `signed char`, `byte` or `std::byte`");
+    static_assert(detail::is_byte_type_iter<InputIt>::value, "the type of value in the range [first, second) must be `char`, `unsigned char`, `signed char`, `byte` or `std::byte`");
     size_t flag_{};
     std::array<byte, 3> buff_{};
     for (auto it = first; it != second && *it != '='; ++it) {
@@ -197,18 +197,114 @@ auto decode_to(ForwardIt first, ForwardIt second, OutIt target) -> void {
         ++flag_;
         flag_ %= 4;
     }
-    if (flag_) {
-        for (auto c : buff_) {
-            *target = c;
-            ++target;
-        }
+    for (size_t i{}; flag_ && i < flag_ - 1; ++i) {
+        *target = buff_[i];
+        ++target;
     }
 }
 
-template<typename Range, typename OutIt>
-auto decode_to(const Range& rng_, OutIt target) ->void {
+template<typename Range, typename TargetIt>
+auto decode_to(const Range& rng_, TargetIt target) ->void {
     static_assert(detail::is_range<Range>::value, "type `Range` must be a range type: [begin, end)");
     decode_to(std::begin(rng_), std::end(rng_), target);
 }
 
+
+template<typename Byte = char>
+class byte_stream_input_iterator {
+public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = Byte;
+    using difference_type = std::ptrdiff_t;
+    using pointer = const Byte*;
+    using reference = const Byte&;
+public:
+    byte_stream_input_iterator() noexcept : istm(nullptr) {};
+    explicit byte_stream_input_iterator(std::ifstream& istm_) noexcept : istm(std::addressof(istm_)) {}
+    byte_stream_input_iterator(const byte_stream_input_iterator&) = default;
+    auto operator= (const byte_stream_input_iterator&) ->byte_stream_input_iterator& = default;
+    ~byte_stream_input_iterator() = default;
+
+    auto operator++() ->byte_stream_input_iterator& {
+        return *this;
+    }
+    auto operator++(int) ->byte_stream_input_iterator& {
+        return *this;
+    }
+    auto operator*() const ->Byte {
+        return static_cast<Byte>(buf);
+    }
+    auto operator== (const byte_stream_input_iterator&) const ->bool {
+        istm->read(&buf, 1);
+        return istm->eof();
+    }
+    auto operator!= (const byte_stream_input_iterator& iit) const ->bool {
+        return !(*this == iit);
+    }
+private:
+    std::ifstream* istm;
+    mutable char buf;
+};
+
+
+template<typename Byte = char>
+class byte_stream_output_iterator {
+public:
+    using iterator_category = std::output_iterator_tag;
+    using value_type = Byte;
+    using difference_type = std::ptrdiff_t;
+    using pointer = Byte*;
+    using reference = Byte&;
+public:
+    byte_stream_output_iterator() noexcept : ostm(nullptr) {};
+    explicit byte_stream_output_iterator(std::ofstream& ostm_) noexcept : ostm(std::addressof(ostm_)) {}
+    byte_stream_output_iterator(const byte_stream_output_iterator&) = default;
+    auto operator= (const byte_stream_output_iterator&) ->byte_stream_output_iterator& = default;
+    auto operator=(Byte byte_) ->byte_stream_output_iterator& {
+        auto buf = static_cast<byte>(byte_);
+        ostm->write(reinterpret_cast<char*>(&buf), 1);
+        return *this;
+    }
+    ~byte_stream_output_iterator() = default;
+    auto operator++() ->byte_stream_output_iterator& {
+        return *this;
+    }
+    auto operator++(int) ->byte_stream_output_iterator& {
+        return *this;
+    }
+    auto operator*() ->byte_stream_output_iterator& {
+        return *this;
+    }
+private:
+    std::ofstream* ostm;
+};
+
+
+inline auto encode_from_file(std::ifstream& istm) ->std::string {
+    return ccat::base64::encode(byte_stream_input_iterator<>{istm}, {});
+}
+
+template<typename TargetIt>
+auto encode_from_file_to(std::ifstream& istm, TargetIt target) ->void {
+    static_assert(
+        detail::is_input_iter<TargetIt>::value ||
+        detail::is_output_iter<TargetIt>::value,
+        "type `TargetIt` must be a input-iterator or output-iterator type"
+    );
+    ccat::base64::encode_to(byte_stream_input_iterator<>{istm}, {}, target);
+}
+
+template<typename InputIt>
+auto decode_to_file(InputIt first, InputIt second, std::ofstream& ostm) ->void {
+    static_assert(detail::is_rdonly_byte_type_iter<InputIt>::value, "the type of value in the range [first, second) must be `char`, `unsigned char`, `signed char`, `byte` or `std::byte`");
+    decode_to(first, second, byte_stream_output_iterator<>{ostm});
+}
+
+template<typename Range>
+auto decode_to_file(const Range& rng_, std::ofstream& ostm) ->void {
+    static_assert(detail::is_range<Range>::value, "type `Range` must be a range type: [begin, end)");
+    decode_to_file(std::begin(rng_), std::end(rng_), ostm);
+}
+
+}
 }
